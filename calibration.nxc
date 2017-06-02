@@ -1,0 +1,67 @@
+
+#define TAPE_MOTOR OUT_A
+#define READ_SENSOR S1
+#define DEG_PER_GAP 112
+
+task main() {
+  int i, color0 = 0, color1 = 0;
+  byte file, value;
+  ClearScreen();
+  TextOut(0, LCD_LINE1, "Sensor Calib");
+  TextOut(0, LCD_LINE2, "Set all to 0");
+  RotateMotor(TAPE_MOTOR, 50, -DEG_PER_GAP);
+  while(!ButtonPressed(BTNCENTER, TRUE)) Wait(200);
+  ClearScreen();
+  TextOut(0, LCD_LINE1, "Sensor Calib");
+  TextOut(0, LCD_LINE2, "*BUSY*");
+  for(i = 1; i <= 16; i++) {
+    RotateMotor(TAPE_MOTOR, 50, DEG_PER_GAP);
+    SetSensorColorRed(READ_SENSOR);
+    color0 += SensorScaled(READ_SENSOR);
+    SetSensorColorGreen(READ_SENSOR);
+    color0 += SensorScaled(READ_SENSOR);
+    SetSensorColorBlue(READ_SENSOR);
+    color0 += SensorScaled(READ_SENSOR);
+    SetSensorColorNone(READ_SENSOR);
+  }
+  RotateMotor(TAPE_MOTOR, 50, -15*DEG_PER_GAP);
+  color0 /= 16;
+  ClearScreen();
+  TextOut(0, LCD_LINE1, "Sensor Calib");
+  TextOut(0, LCD_LINE2, "Set all to 1");
+  RotateMotor(TAPE_MOTOR, 50, -DEG_PER_GAP);
+  while(!ButtonPressed(BTNCENTER, TRUE)) Wait(200);
+  ClearScreen();
+  TextOut(0, LCD_LINE1, "Sensor Calib");
+  TextOut(0, LCD_LINE2, "*BUSY*");
+  for(i = 1; i <= 16; i++) {
+    RotateMotor(TAPE_MOTOR, 50, DEG_PER_GAP);
+    SetSensorColorRed(READ_SENSOR);
+    color1 += SensorScaled(READ_SENSOR);
+    SetSensorColorGreen(READ_SENSOR);
+    color1 += SensorScaled(READ_SENSOR);
+    SetSensorColorBlue(READ_SENSOR);
+    color1 += SensorScaled(READ_SENSOR);
+    SetSensorColorNone(READ_SENSOR);
+  }
+  RotateMotor(TAPE_MOTOR, 50, -15*DEG_PER_GAP);
+  color1 /= 16;
+  ClearScreen();
+  TextOut(0, LCD_LINE1, "Sensor Calib");
+  NumOut(0, LCD_LINE2, color0);
+  NumOut(25, LCD_LINE2, color1);
+  NumOut(50, LCD_LINE2, color1 - color0);
+  NumOut(75, LCD_LINE2, (color0 + color1) / 2);
+  value = (color0 + color1) / 2;
+  if(color1 - color0 < 30) {
+    TextOut(0, LCD_LINE3, "FAIL");
+  }
+  else {
+    CreateFile("calib", 1, file);
+    Write(file, value);
+    CloseFile(file);
+    TextOut(0, LCD_LINE3, "Calib Saved");
+  }
+  while(!ButtonPressed(BTNCENTER, TRUE)) Wait(200);
+}
+  

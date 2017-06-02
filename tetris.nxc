@@ -1,0 +1,249 @@
+#define FPS 10
+
+#define BLOCK_SIZE 4
+#define ROWS 16
+#define COLUMNS 16
+
+#define FRAME_WAIT 1000 / FPS
+#define STATUSBAR_X BLOCK_SLZE * COLUMNS
+
+// Note: The increasing order for y is from bottom to top
+
+int shape_size[] = {
+2,2,
+3,2,
+3,2,
+3,2,
+3,2,
+3,2,
+4,1
+};
+
+char shapes[] = {
+1,1,0,0,
+1,1,0,0,
+1,0,0,0,
+1,1,1,0,
+1,1,1,0,
+1,0,0,0,
+1,1,1,0,
+0,1,0,0,
+0,1,1,0,
+1,1,0,0,
+1,1,0,0,
+0,1,1,0,
+1,1,1,1,
+0,0,0,0
+};
+
+bool loopflag = TRUE;
+
+bool blocks[ROWS][COLUMNS];
+bool cur_brick[4][4]; // The size of a brick will not be greater than 4
+int cur_brick_id, cur_x, cur_y, cur_w, cur_h, cur_dir;
+int score = 0;
+
+void draw_block(int x, int y) {
+  RectOut(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, DRAW_OPT_FILL_SHAPE);
+}
+
+void draw_all_blocks() {
+  int i, j;
+  for(i = 0; i < ROWS; i++) {
+    for(j = 0; j < COLUMNS; j++) {
+      if(blocks[i][j]) draw_block(i, j);
+    }
+  }
+  for(i = 0; i < 4; i++) {
+    for(j = 0; j < 4; j++) {
+      if(cur_brick[i][j]) draw_block(cur_x + i, cur_y + j);
+    }
+  }
+}
+
+void draw_all() {
+  RectOut(0, 0, 64, 64, DRAW_OPT_CLEAR | DRAW_OPT_FILL_SHAPE);
+  draw_all_blocks();
+  LineOut(65, 0, 65, 64);
+  TextOut(68, LCD_LINE2, "SCORE");
+  NumOut(74, LCD_LINE3, score);
+  TextOut(68, LCD_LINE7, "By:");
+  TextOut(68, LCD_LINE8, "Wanna");
+}
+
+void copy_brick() {
+  int i, j, x, y;
+  for(i = 0; i < 4; i++) {
+    for(j = 0; j < 4; j++) {
+      cur_brick[i][j] = FALSE;
+    }
+  }
+  switch(cur_dir) {
+  case 0:
+  case 2:
+    cur_w = shape_size[cur_brick_id*2];
+    cur_h = shape_size[cur_brick_id*2+1];
+    break;
+  case 1:
+  case 3:
+    cur_w = shape_size[cur_brick_id*2+1];
+    cur_h = shape_size[cur_brick_id*2];
+    break;
+  }
+  for(i = 0; i < 4; i++) {
+    for(j = 0; j < 2; j++) {
+      // Transform the coordination and move the brick to left-bottommost
+      switch(cur_dir) {
+      case 0:
+        x = i; y = j; break;
+      case 1:
+        x = j; y = 3-i-(4-cur_h); break;
+      case 2:
+        x = 3-i-(4-cur_w); y = 3-j-(4-cur_h); break;
+      case 3:
+        x = 3-j-(4-cur_w); y = i; break;
+      }
+      /*NumOut(0, LCD_LINE1, cur_brick_id);
+      NumOut(0, LCD_LINE2, x);
+      NumOut(0, LCD_LINE3, y);
+      NumOut(0, LCD_LINE4, shapes[cur_brick_id*8+j*4+i]);
+      Wait(1000);*/
+      if(x >= 0 && y >= 0) cur_brick[x][y] = shapes[cur_brick_id*8+j*4+i];
+    }
+  }
+}
+
+void adjust_x() {
+  if(cur_x < 0) cur_x = 0;
+  if(cur_x + cur_w > COLUMNS) cur_x = COLUMNS - cur_w;
+}
+
+void new_brick() {
+  PlayToneEx(440, 100, 1, FALSE);
+  cur_brick_id = rand() % 7;
+  cur_dir = rand() % 4;
+  cur_x = COLUMNS / 2 - 1;
+  cur_y = ROWS;
+  copy_brick();
+  adjust_x();
+}
+
+bool hittest_d() {
+  int i, j;
+  if(cur_y <= 0) return TRUE;
+  for(i = 0; i < cur_w; i++) {
+    for(j = 0; j < cur_h; j++) {
+      if(cur_y + j - 1 < ROWS && cur_brick[i][j] && blocks[cur_x + i][cur_y + j - 1]) return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+bool hittest_l() {
+  int i, j;
+  if(cur_x <= 0) return TRUE;
+  for(i = 0; i < cur_w; i++) {
+    for(j = 0; j < cur_h; j++) {
+      if(cur_y + j < ROWS && cur_brick[i][j] && blocks[cur_x + i - 1][cur_y + j]) return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+bool hittest_r() {
+  int i, j;
+  if(cur_x + cur_w >= COLUMNS) return TRUE;
+  for(i = 0; i < cur_w; i++) {
+    for(j = 0; j < cur_h; j++) {
+      if(cur_y + j < ROWS && cur_brick[i][j] && blocks[cur_x + i + 1][cur_y + j]) return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+void rotate_brick() {
+  int old_x = cur_x;
+  cur_dir++;
+  cur_dir %= 4;
+  copy_brick();
+  adjust_x();
+  if(hittest_r()) {
+    cur_dir+=4;
+    cur_dir--;
+    cur_dir %= 4;
+    cur_x = old_x;
+    copy_brick();
+  }
+}
+
+void on_descend() {
+  int i, j, k;
+  bool fullrow;
+  int clearscore = 10;
+  if (hittest_d()) {
+    if (cur_y + cur_h >= ROWS) {
+      TextOut(20, LCD_LINE3, "Game Over");
+      PlayToneEx(880, 500, 1, FALSE);
+      Wait(1000);
+      loopflag = FALSE;
+      return;
+    }
+    score++;
+    for(i = 0; i < cur_w; i++) {
+      for(j = 0; j < cur_h; j++) {
+        blocks[cur_x + i][cur_y + j] |= cur_brick[i][j];
+      }
+    }
+    for(j = 0; j < ROWS; j++) {
+      fullrow = TRUE;
+      for(i = 0; i < COLUMNS; i++) {
+        fullrow &= blocks[i][j];
+      }
+      if(fullrow) {
+        for(k = j; k < ROWS - 1; k++) {
+          for(i = 0; i < COLUMNS; i++) {
+            blocks[i][k] = blocks[i][k + 1];
+          }
+        }
+        score += clearscore;
+        clearscore *= 2;
+        j--;
+        PlayToneEx(660, 100, 1, FALSE);
+      }
+    }
+    
+    new_brick();
+  }
+  else {
+    cur_y--;
+  }
+}
+
+task main() {
+  int framecount = 0;
+  new_brick();
+  while(loopflag) {
+    framecount++;
+    if(ButtonPressed(BTNLEFT, TRUE)) {
+      PlayToneEx(440, 100, 1, FALSE);
+      if(!hittest_l()) cur_x--;
+      draw_all();
+    }
+    if(ButtonPressed(BTNRIGHT, TRUE)) {
+      PlayToneEx(440, 100, 1, FALSE);
+      if(!hittest_r()) cur_x++;
+      draw_all();
+    }
+    if(ButtonPressed(BTNCENTER, TRUE)) {
+      PlayToneEx(440, 100, 1, FALSE);
+      rotate_brick();
+      draw_all();
+    }
+    if(framecount % (FPS / 2) == 0) {
+      //PlayToneEx(440, 100, 1, FALSE);
+      on_descend();
+      draw_all();
+    }
+    Wait(FRAME_WAIT);
+  }
+}

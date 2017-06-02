@@ -1,0 +1,104 @@
+
+#define TAPE_MOTOR OUT_A
+#define WRITE_MOTOR OUT_B
+#define TAPE_MOTOR_SPEED 70
+#define READ_SENSOR S1
+#define WRITE_OFFSET 3
+
+#define DEG_PER_GAP 112
+
+byte color_threshold;
+int readpos = 1; // 1~16 are valid
+
+void read_threshold() {
+  int size;
+  byte file;
+  OpenFileRead("calib", size, file);
+  Read(file, color_threshold);
+  CloseFile(file);
+  ClearScreen();
+  TextOut(0, LCD_LINE1, "threshold:");
+  NumOut(70, LCD_LINE1, color_threshold);
+}
+
+int readbit() {
+  int color;
+  color = 0;
+  SetSensorColorRed(READ_SENSOR);
+  color += SensorScaled(READ_SENSOR);
+  SetSensorColorGreen(READ_SENSOR);
+  color += SensorScaled(READ_SENSOR);
+  SetSensorColorBlue(READ_SENSOR);
+  color += SensorScaled(READ_SENSOR);
+  SetSensorColorNone(READ_SENSOR);
+  if(color > color_threshold) {
+    PlayTone(880, 200);
+    Wait(200);
+    return 1;
+  }
+  else {
+    PlayTone(440, 200);
+    Wait(200);
+    return 0;
+  }
+}
+
+void writebit(int bit) {
+  if(bit) {
+    RotateMotor(WRITE_MOTOR, 50, -180);
+  }
+  else {
+    RotateMotor(WRITE_MOTOR, 50, 180);
+  }
+}
+
+void tapefwd(int gaps) {
+  if(readpos+gaps<=16 && readpos+gaps>=1-WRITE_OFFSET) {
+    RotateMotor(TAPE_MOTOR, TAPE_MOTOR_SPEED, gaps*DEG_PER_GAP);
+    readpos += gaps;
+  }
+}
+
+void tapegoto_r(int pos) {
+  tapefwd(pos - readpos);
+}
+
+void tapegoto_w(int pos) {
+  tapefwd(pos - readpos - WRITE_OFFSET);
+}
+
+
+task main() {
+  read_threshold();
+  int i, d;
+  for(i = 1; i <= 4; i++) {
+    d = 0;
+    tapegoto_r(i);
+    d += readbit();
+    tapegoto_r(i + 4);
+    d += readbit();
+    switch(d) {
+    case 0:
+      break;
+    case 1:
+      tapegoto_r(i + 8);
+      if(readbit()) {
+        tapegoto_w(i + 8);
+        writebit(0);
+        tapefwd(1);
+        writebit(1);
+      }
+      else {
+      tapegoto_w(i + 8);
+        writebit(1);
+      }
+      break;
+    case 2:
+      tapegoto_w(i + 9);
+      writebit(1);
+      break;
+    }
+  }
+  tapegoto_r(1);
+}
+    

@@ -1,0 +1,200 @@
+
+#define TAPE_MOTOR OUT_A
+#define WRITE_MOTOR OUT_B
+#define TAPE_MOTOR_SPEED 70
+#define READ_SENSOR S1
+#define WRITE_OFFSET 3
+
+#define DEG_PER_GAP 112
+
+// instructions
+
+#define IWRITE 0xf0
+#define IJUMP0 0x10
+#define IJUMP1 0x11
+#define IJUMPA 0x12
+#define IFORWD 0xf1
+#define IREWND 0xf2
+
+#define QACCEPT 0xff
+#define QREJECT 0xfe
+
+byte color_threshold;
+int readpos = 1; // 1~16 are valid
+
+void read_threshold() {
+  int size;
+  byte file;
+  OpenFileRead("calib", size, file);
+  Read(file, color_threshold);
+  CloseFile(file);
+  ClearScreen();
+  TextOut(0, LCD_LINE1, "threshold:");
+  NumOut(70, LCD_LINE1, color_threshold);
+}
+
+int readbit() {
+  int color;
+  color = 0;
+  SetSensorColorRed(READ_SENSOR);
+  color += SensorScaled(READ_SENSOR);
+  SetSensorColorGreen(READ_SENSOR);
+  color += SensorScaled(READ_SENSOR);
+  SetSensorColorBlue(READ_SENSOR);
+  color += SensorScaled(READ_SENSOR);
+  SetSensorColorNone(READ_SENSOR);
+  if(color > color_threshold) {
+    PlayTone(880, 200);
+    Wait(200);
+    return 1;
+  }
+  else {
+    PlayTone(440, 200);
+    Wait(200);
+    return 0;
+  }
+}
+
+void writebit(int bit) {
+  if(bit) {
+    RotateMotor(WRITE_MOTOR, 50, -180);
+  }
+  else {
+    RotateMotor(WRITE_MOTOR, 50, 180);
+  }
+}
+
+void tapefwd(int gaps) {
+  if(readpos+gaps<=16 && readpos+gaps>=1-WRITE_OFFSET) {
+    RotateMotor(TAPE_MOTOR, TAPE_MOTOR_SPEED, gaps*DEG_PER_GAP);
+    readpos += gaps;
+  }
+}
+
+void tapegoto_r(int pos) {
+  tapefwd(pos - readpos);
+}
+
+void tapegoto_w(int pos) {
+  tapefwd(pos - readpos - WRITE_OFFSET);
+}
+
+void soundok() {
+  PlayTone(880, 500);
+  Wait(3000);
+}
+
+void sounderr() {
+  PlayTone(880, 150);
+  Wait(300);
+  PlayTone(880, 150);
+  Wait(300);
+  PlayTone(880, 150);
+  Wait(2400);
+}
+
+void print(string str) {
+  ClearScreen();
+  TextOut(0, LCD_LINE2, str);
+}
+
+task main() {
+  int size;
+  byte handle;
+  byte data[1024];
+  OpenFileRead("universal.txt", size, handle);
+  size = 1024;
+  ReadBytes(handle, size, data);
+  CloseFile(handle);
+  read_threshold();
+  int read;
+  int pc = 0;
+  bool run = TRUE;
+  read = readbit();
+  while(run) {
+    switch(data[pc]) {
+    case IWRITE:
+      pc++;
+      tapefwd(-WRITE_OFFSET);
+      writebit(data[pc]);
+      tapefwd(WRITE_OFFSET);
+      pc++;
+      break;
+    case IJUMP0:
+      pc++;
+      if(!read) {
+        if(data[pc] == QACCEPT) {
+          print("OK");
+          soundok();
+          run = FALSE;
+        }
+        else if(data[pc] == QREJECT) {
+          print("EREJECT");
+          sounderr();
+          run = FALSE;
+        }
+        else {
+          pc = data[pc] * 16;
+          read = readbit();
+        }
+      }
+      else {
+        pc++;
+      }
+      break;
+    case IJUMP1:
+      pc++;
+      if(read) {
+        if(data[pc] == QACCEPT) {
+          print("OK");
+          soundok();
+          run = FALSE;
+        }
+        else if(data[pc] == QREJECT) {
+          print("EREJECT");
+          sounderr();
+          run = FALSE;
+        }
+        else {
+          pc = data[pc] * 16;
+          read = readbit();
+        }
+      }
+      else {
+        pc++;
+      }
+      break;
+    case IJUMPA:
+      pc++;
+      if(data[pc] == QACCEPT) {
+        print("OK");
+        soundok();
+        run = FALSE;
+      }
+      else if(data[pc] == QREJECT) {
+        print("EREJECT");
+        sounderr();
+        run = FALSE;
+      }
+      else {
+        pc = data[pc] * 16;
+        read = readbit();
+      }
+      break;
+    case IFORWD:
+      pc++;
+      tapefwd(1);
+      break;
+    case IREWND:
+      pc++;
+      tapefwd(-1);
+      break;
+    default:
+      print("EINVINS");
+      sounderr();
+      run = FALSE;
+      break;
+    }
+  }
+  tapegoto_r(1);
+}
